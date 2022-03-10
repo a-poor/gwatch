@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,7 +21,7 @@ func init() {
 	flag.Usage = CustomUsage
 
 	// Register flags
-	flag.DurationVar(&interval, "i", time.Second*2, "How often should the command be run?")
+	flag.DurationVar(&interval, "i", time.Second, "How often should the command be run?")
 }
 
 func main() {
@@ -50,16 +51,26 @@ func main() {
 	// Create the bubbletea program from model
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
+	// Create a ticker, using the specified interval, for running
+	// the command in the background
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	var wg sync.WaitGroup
+
 	// Start running the command in the background
 	var bgErr error
 	go func() {
-		// Create a ticker, using the specified interval, for running
-		// the command in the background
-		ticker := time.NewTicker(interval)
+		wg.Add(1)
+		defer wg.Done()
 		defer ticker.Stop()
+		defer fmt.Println("Inner complete!")
 
 		for {
 			select {
+			case <-ctx.Done():
+				return
+
 			case <-ticker.C:
 				// Create the command
 				cmd := exec.CommandContext(ctx, args[0], args[1:]...)
@@ -78,21 +89,23 @@ func main() {
 					return
 				}
 
+				fmt.Printf("Time: %s\nOut:%q\n", time.Now(), string(out))
+
 				// Set the output
 				m.updateOutput(string(out))
-
-			case <-ctx.Done():
-				return
 			}
 		}
 	}()
 
 	// Run and wait the handle errors (from the TUI or bg executor)
-	err := p.Start()
-	if err != nil {
-		fmt.Printf("Error with TUI: %s\n", err)
-	}
+	//err := p.Start()
+	//if err != nil {
+	//	fmt.Printf("Error with TUI: %s\n", err)
+	//}
+	time.Sleep(time.Second * 5)
 	if bgErr != nil {
 		fmt.Printf("Error executing cmd: %s\n", bgErr)
 	}
+	cancel()
+	wg.Wait()
 }
