@@ -1,1 +1,1 @@
-package gwatch_test
+package main_test
